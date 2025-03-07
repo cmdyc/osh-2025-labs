@@ -5,7 +5,8 @@
 **CPU型号、核心数、线程数：**
 
 ![*](https://github.com/cmdyc/osh-2025-labs/blob/main/lab0/src/CPU%20%E5%9E%8B%E5%8F%B7%E3%80%81%E6%A0%B8%E5%BF%83%E6%95%B0%E3%80%81%E7%BA%BF%E7%A8%8B%E6%95%B0(1).png "CPU型号、核心数、线程数")
-![*](https://github.com/cmdyc/osh-2025-labs/blob/main/lab0/src/CPU%20%E5%9E%8B%E5%8F%B7%E3%80%81%E6%A0%B8%E5%BF%83%E6%95%B0%E3%80%81%E7%BA%BF%E7%A8%8B%E6%95%B0(2).png) "CPU型号、核心数、线程数")
+
+![*](https://github.com/cmdyc/osh-2025-labs/blob/main/lab0/src/CPU%20%E5%9E%8B%E5%8F%B7%E3%80%81%E6%A0%B8%E5%BF%83%E6%95%B0%E3%80%81%E7%BA%BF%E7%A8%8B%E6%95%B0(2).png "CPU型号、核心数、线程数")
 
 **内存总量及使用情况**
 
