@@ -23,3 +23,5 @@
 **网络接口和IP地址**
 
 ![*](https://github.com/cmdyc/osh-2025-labs/blob/main/lab0/src/%E7%BD%91%E7%BB%9C%E6%8E%A5%E5%8F%A3%E5%92%8C%20IP%20%E5%9C%B0%E5%9D%80.png "网络接口和IP地址")
+
+*注：等待完整的图片显示出来可能会花一些时间*
