@@ -13,6 +13,8 @@
 // wait
 #include <sys/wait.h>
 
+#include <errno.h>
+
 std::vector<std::string> split(std::string s, const std::string &delimiter);
 
 int main() {
@@ -73,8 +75,36 @@ int main() {
     }
 
     if (args[0] == "cd") {
-      std::cout << "To be done!\n";
-      continue;
+      if (args.size() == 1) {
+        if (chdir("/home") == -1) {
+          perror("chdir() failed");
+          continue;
+        }
+        continue;
+      } else if (args.size() == 2) {
+        if (args[1] == "-") {
+          const char *oldpwd = getenv("OLDPWD");
+          if (oldpwd == NULL) {
+            std::cout << "OLDPWD not set\n";
+            continue;
+          }
+          if (chdir(oldpwd) == -1) {
+            perror("chdir() failed");
+            continue;
+          }
+          continue;
+        } else {
+          const char *path = args[1].c_str(); // chdir()函数的参数为*char，因此需要转换格式
+          if (chdir(path) == -1) {
+            perror("chdir() failed");
+            continue;
+          }
+          continue;
+        }
+      } else {
+        std::cout << "Invalid cd code\n";
+        continue;
+      }
     }
 
     // 处理外部命令
