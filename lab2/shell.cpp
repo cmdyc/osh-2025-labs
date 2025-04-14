@@ -16,8 +16,11 @@
 #include <errno.h>
 // open
 #include <fcntl.h>
+// signal
+#include <signal.h>
 
 std::vector<std::string> split(std::string s, const std::string &delimiter);
+void sigint_handler(int sig); 
 
 int main() {
   // 不同步 iostream 和 cstdio 的 buffer
@@ -25,6 +28,12 @@ int main() {
 
   // 用来存储读入的一行命令
   std::string cmd;
+
+  // 对于Ctrl+C信号，换行并输出$
+  signal(SIGINT, sigint_handler);
+
+  // 对于SIGTTOU信号，直接忽略
+  signal(SIGTTOU, SIG_IGN);
 
   while (true) {
     // 如果输入按下Ctr+D（识别为EOF）,退出shell程序
@@ -146,13 +155,22 @@ int main() {
       continue;
     } else if (pid == 0) {
       // 子进程
+      setpgid(0, 0); // 将子进程设置为一个新的进程组
+      tcsetpgrp(STDIN_FILENO, getpgid(0)); // 将子进程设置为当前终端的前台进程组
+
+      // 恢复默认的信号处理方式
+      signal(SIGINT, SIG_DFL);
+      signal(SIGTTOU, SIG_DFL);
+
+      // 如果命令中有" | "，创建管道
       if (scomds.size() > 1) {
         for (size_t i = 0; i < scomds.size() - 1; ++i)
           if (pipe(fd[i]) == -1) {
             perror("pipe failed");
             continue;;
           }
-      } // 创建管道
+      } 
+
       for (size_t i = 0; i < scomds.size(); ++i) {
         // 创建子进程执行指令
         pid_t cpid = fork();
@@ -179,6 +197,8 @@ int main() {
           // 存储分割后的子命令参数
           std::vector<std::string> scomd_args = split(scomds[i], " ");
           // 实现重定向功能
+          // 访问权限为 0644 表示文件所有者可读写, 其他用户只读
+          // 更改指定内容为" "，防止重定向文件名被当作参数
           for (size_t i = 0; i < scomd_args.size(); i++) {
             if (scomd_args[i] == "<") {
               int fd = open(scomd_args[i+1].c_str(), O_RDONLY, 0644);
@@ -222,6 +242,7 @@ int main() {
           std::vector<char*> argv; // 存储转换为C风格字符串的指针
           // 遍历 scomd_args 中的每个元素, auto& 声明引用以避免拷贝
           for (auto& arg : scomd_args) {
+            // 屏蔽掉额外添加的" "
             if (arg != " ")
               argv.push_back(const_cast<char*>(arg.c_str())); // execvp 函数要求第一个参数是 const char*, 强制移除
           }
@@ -252,9 +273,20 @@ int main() {
       // 父进程调用 wait(nullptr) 阻塞等待子进程结束，并回收其资源
       // 成功：返回终止的子进程PID
       // 失败：返回 -1（如无子进程或信号中断）
-      int ret = wait(nullptr);
+      // 父进程：设置子进程组为前台并等待
+      setpgid(pid, pid);
+      tcsetpgrp(STDIN_FILENO, pid);
+
+      int status;
+      int ret = waitpid(pid, &status, 0);
+
+      // 恢复 Shell 的前台控制
+      tcsetpgrp(STDIN_FILENO, getpgrp());
+
       if (ret < 0) {
-        std::cout << "wait failed";
+        perror("waitpid failed");
+      } else if (WIFSIGNALED(status)) {
+        std::cout << "\n";
       }
     }
   }
@@ -280,4 +312,10 @@ std::vector<std::string> split(std::string s, const std::string &delimiter) {
     res.push_back(s);
   }
   return res;
+}
+
+void sigint_handler(int sig) {
+  std::cout << "\n$ ";
+  // 命令没有输入完, ^C 会丢弃当前命令
+  std::cout.flush();
 }
