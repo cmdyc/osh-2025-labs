@@ -42,6 +42,9 @@ int main() {
     // 按" | "分割命令为子命令
     std::vector<std::string> scomds = split(cmd, " | ");
 
+    // 为创建管道而设置的数组
+    int fd[scomds.size() - 1][2];
+
     // 没有可处理的命令
     if (args.empty()) {
       continue;
@@ -130,48 +133,44 @@ int main() {
 
     // fork() 用于创建一个与父进程几乎完全相同的子进程
     // 调用后，父进程和子进程会并行执行后续代码
-    // 父进程返回子进程的PID（进程ID）
-    // 子进程返回 0
-    // 失败时返回 -1
+    // fork() 会给父进程和子进程均返回一个返回值
+    // 父进程收到的的返回值为子进程的PID（进程ID）
+    // 子进程收到的的返回值为 0
+    // 创建失败时返回 -1
     pid_t pid = fork();
     
-  if (pid < 0) {
-    perror("fork failed");
-    continue;
-  } else if (pid == 0) {
-    // 子进程
-    if (scomds.size() > 1) {
-      size_t pipe_count = scomds.size() - 1;
-      int fd[pipe_count][2];
-      for (size_t i = 0; i < pipe_count; ++i) {
-        if (pipe(fd[i]) == -1) {
-          perror("pipe failed");
-          continue;;
-        }
-      }
-
-      std::vector<pid_t> child_pids;       
-
+    if (pid < 0) {
+      perror("fork failed");
+      continue;
+    } else if (pid == 0) {
+      // 子进程
+      if (scomds.size() > 1) {
+        for (size_t i = 0; i < scomds.size() - 1; ++i)
+          if (pipe(fd[i]) == -1) {
+            perror("pipe failed");
+            continue;;
+          }
+      } // 创建管道
       for (size_t i = 0; i < scomds.size(); ++i) {
+        // 创建子进程执行指令
         pid_t cpid = fork();
         if (cpid < 0) {
           perror("fork failed");
           continue;
         } else if (cpid == 0) {
-          // 输入重定向
-          if (i > 0) {
-            dup2(fd[i-1][0], STDIN_FILENO);
-            close(fd[i-1][0]);
-          }
-          // 输出重定向
-          if (i < pipe_count) {
-            dup2(fd[i][1], STDOUT_FILENO);
-            close(fd[i][1]);
-          }
-          // 关闭所有管道描述符
-          for (size_t j = 0; j < pipe_count; ++j) {
-            close(fd[j][0]);
-            close(fd[j][1]);
+          if (scomds.size() > 1) {
+            // 输入重定向
+            if (i > 0) {
+              dup2(fd[i-1][0], STDIN_FILENO);
+              close(fd[i-1][0]);
+              close(fd[i-1][1]);
+            }
+            // 输出重定向
+            if (i < scomds.size() - 1) {
+              dup2(fd[i][1], STDOUT_FILENO);
+              close(fd[i][0]);
+              close(fd[i][1]);
+            }
           }
           // 执行子命令
           std::vector<std::string> scomd_args = split(scomds[i], " "); // 存储分割后的子命令参数
@@ -189,47 +188,31 @@ int main() {
           perror("execvp failed");
           exit(255);
         } else {
-            child_pids.push_back(cpid);
+          // 父进程
+          // 关闭上一个命令的读端和写端，防止阻塞
+          close(fd[i-1][0]);
+          close(fd[i-1][1]);
         }
       }
-
-      // 父进程关闭所有管道
-      for (size_t i = 0; i < pipe_count; ++i) {
-        close(fd[i][0]);
-        close(fd[i][1]);
+      if (scomds.size() > 1) {
+        // 关闭最后一个管道的读端与写端
+        close(fd[scomds.size()-2][1]);
+        close(fd[scomds.size()-2][1]);
       }
-
-      // 等待所有子进程
-      for (pid_t pid : child_pids) {
-        waitpid(pid, nullptr, 0);
+      while (wait(nullptr) > 0); // 等待所有子进程结束
+      return 0;
+    } else {    
+      // 这里只有 Shell 才会进入
+      // 父进程调用 wait(nullptr) 阻塞等待子进程结束，并回收其资源
+      // 成功：返回终止的子进程PID
+      // 失败：返回 -1（如无子进程或信号中断）
+      int ret = wait(nullptr);
+      if (ret < 0) {
+        std::cout << "wait failed";
       }
-
-      continue;
-    } else {
-      // 处理单个命令
-      std::vector<std::string> scomd_args = split(scomds[0], " ");
-      std::vector<char*> argv;
-      for (auto& arg : scomd_args) {
-        argv.push_back(const_cast<char*>(arg.c_str()));
-      }
-      argv.push_back(nullptr);
-      execvp(argv[0], argv.data());
-      perror("execvp failed");
-      exit(255);
-    }
-  }
-
-    // 这里只有父进程（原进程）才会进入
-    // 父进程调用 wait(nullptr) 阻塞等待子进程结束，并回收其资源
-    // 成功：返回终止的子进程PID
-    // 失败：返回 -1（如无子进程或信号中断）
-    int ret = wait(nullptr);
-    if (ret < 0) {
-      std::cout << "wait failed";
     }
   }
 }
-
 // 经典的 cpp string split 实现
 // https://stackoverflow.com/a/14266139/11691878
 // 功能: 将字符串 s 按分隔符 delimiter 分割为子字符串，通过函数返回值存储在一个 vector<string> 中
