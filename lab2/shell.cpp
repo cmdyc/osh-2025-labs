@@ -14,6 +14,8 @@
 #include <sys/wait.h>
 // perror
 #include <errno.h>
+// open
+#include <fcntl.h>
 
 std::vector<std::string> split(std::string s, const std::string &delimiter);
 
@@ -158,6 +160,7 @@ int main() {
           perror("fork failed");
           continue;
         } else if (cpid == 0) {
+          // 实现管道功能
           if (scomds.size() > 1) {
             // 输入重定向
             if (i > 0) {
@@ -172,12 +175,55 @@ int main() {
               close(fd[i][1]);
             }
           }
+
+          // 存储分割后的子命令参数
+          std::vector<std::string> scomd_args = split(scomds[i], " ");
+          // 实现重定向功能
+          for (size_t i = 0; i < scomd_args.size(); i++) {
+            if (scomd_args[i] == "<") {
+              int fd = open(scomd_args[i+1].c_str(), O_RDONLY, 0644);
+              if (fd < 0) {
+                perror("open failed");
+                continue;
+              } else {
+                dup2(fd, STDIN_FILENO);
+                close(fd);
+              }
+              scomd_args[i] = " ";
+              scomd_args[i+1] = " ";
+            }
+            if (scomd_args[i] == ">>") {
+              int fd = open(scomd_args[i+1].c_str(), O_CREAT | O_WRONLY | O_APPEND, 0644);
+              if (fd < 0) {
+                perror("open failed");
+                continue;
+              } else {
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+              }
+              scomd_args[i] = " ";
+              scomd_args[i+1] = " ";
+            }
+            if (scomd_args[i] == ">") {
+              int fd = open(scomd_args[i+1].c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+              if (fd < 0) {
+                perror("open failed");
+                continue;
+              } else {
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+              }
+              scomd_args[i] = " ";
+              scomd_args[i+1] = " ";
+            }
+          }
+
           // 执行子命令
-          std::vector<std::string> scomd_args = split(scomds[i], " "); // 存储分割后的子命令参数
           std::vector<char*> argv; // 存储转换为C风格字符串的指针
           // 遍历 scomd_args 中的每个元素, auto& 声明引用以避免拷贝
           for (auto& arg : scomd_args) {
-            argv.push_back(const_cast<char*>(arg.c_str())); // execvp 函数要求第一个参数是 const char*, 强制移除
+            if (arg != " ")
+              argv.push_back(const_cast<char*>(arg.c_str())); // execvp 函数要求第一个参数是 const char*, 强制移除
           }
           argv.push_back(nullptr); // execvp 系列的 argv 需要以 nullptr 结尾
 
@@ -213,6 +259,7 @@ int main() {
     }
   }
 }
+
 // 经典的 cpp string split 实现
 // https://stackoverflow.com/a/14266139/11691878
 // 功能: 将字符串 s 按分隔符 delimiter 分割为子字符串，通过函数返回值存储在一个 vector<string> 中
