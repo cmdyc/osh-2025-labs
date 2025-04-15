@@ -18,6 +18,8 @@
 #include <fcntl.h>
 // signal
 #include <signal.h>
+// getpnam
+#include <pwd.h>
 
 std::vector<std::string> split(std::string s, const std::string &delimiter);
 void sigint_handler(int sig); 
@@ -28,6 +30,12 @@ int main() {
 
   // 用来存储读入的一行命令
   std::string cmd;
+
+  // 用来储存后台进程的PID
+  std::vector<pid_t> bg_pids;
+
+  // 用来表示命令是否在后台执行
+  bool bg_command;
 
   // 对于Ctrl+C信号，换行并输出$
   signal(SIGINT, sigint_handler);
@@ -47,6 +55,14 @@ int main() {
     // 读入一行。std::getline 结果不包含换行符。
     std::getline(std::cin, cmd);
 
+    if (cmd.back() == '&') {
+      // 如果命令以&结尾，去掉&，并将命令放入后台执行
+      cmd.pop_back(); 
+      bg_command = true;
+    } else {
+      bg_command = false;
+    }
+    
     // 按空格分割命令为单词
     std::vector<std::string> args = split(cmd, " ");
 
@@ -132,8 +148,50 @@ int main() {
       }
     }
 
-    // 处理外部命令
+    // 等待所有后台命令终止
+    // 如果有后台命令在运行，wait命令会阻塞，直到所有后台命令都结束
+    // 结束后输出"Process <pid> exited"
+    
+    if (args[0] == "wait") {
+      for (auto &bg_pid : bg_pids) {
+        int status;
+        pid_t ret = waitpid(bg_pid, &status, 0);
+        if (ret == -1) {
+          perror("waitpid failed");
+        } else if (WIFEXITED(status) | WIFSIGNALED(status) | WEXITSTATUS(status)) {
+          std::cout << "Process " << bg_pid << " exited " << "\n";
+        }
+      }
+      continue;
+    }
 
+    if (args[0] == "echo") {
+      if (args.size() == 1) {
+        std::cout << "\n";
+        continue;
+      } else if (args[1] == "~root") {
+        if (args.size() > 2) {
+          std::cout << "Invalid echo code\n";
+          continue;
+        }
+        struct passwd *pw = getpwnam("root");
+        if (pw) {
+          std::cout << pw->pw_dir << std::endl;
+        } else {
+          perror("getpwnam() failed");
+        }
+        continue;
+      } else {
+        for (size_t i = 1; i < args.size(); i++) {
+          std::cout << args[i] << " ";
+        }
+        std::cout << std::endl;
+        continue;
+      }
+    }
+    
+    // 处理外部命令
+    // pid_t ppid = getppid(); // 获取父进程PID
     // 用户在终端输入命令（如 ls）
     // Shell（父进程）调用 fork() 创建子进程
     // 子进程调用 execvp() 执行 ls 命令，父进程通过 wait() 等待子进程结束
@@ -156,7 +214,19 @@ int main() {
     } else if (pid == 0) {
       // 子进程
       setpgid(0, 0); // 将子进程设置为一个新的进程组
-      tcsetpgrp(STDIN_FILENO, getpgid(0)); // 将子进程设置为当前终端的前台进程组
+
+      // 如果命令是后台执行的，设置父进程设置为前台进程组
+      // 并且避免后台进程与终端交互
+      // 如果命令不是后台执行的，设置子进程为前台进程组
+      if (!bg_command) {
+        tcsetpgrp(STDIN_FILENO, getpgid(0)); // 将父进程设置为当前终端的前台进程组
+      } else {
+        int null_fd = open("/dev/null", O_RDWR);
+        dup2(null_fd, STDIN_FILENO);
+        dup2(null_fd, STDOUT_FILENO);
+        dup2(null_fd, STDERR_FILENO);
+        close(null_fd);
+      }
 
       // 恢复默认的信号处理方式
       signal(SIGINT, SIG_DFL);
@@ -167,7 +237,7 @@ int main() {
         for (size_t i = 0; i < scomds.size() - 1; ++i)
           if (pipe(fd[i]) == -1) {
             perror("pipe failed");
-            continue;;
+            continue;
           }
       } 
 
@@ -183,14 +253,12 @@ int main() {
             // 输入重定向
             if (i > 0) {
               dup2(fd[i-1][0], STDIN_FILENO);
-              close(fd[i-1][0]);
               close(fd[i-1][1]);
             }
             // 输出重定向
             if (i < scomds.size() - 1) {
               dup2(fd[i][1], STDOUT_FILENO);
               close(fd[i][0]);
-              close(fd[i][1]);
             }
           }
 
@@ -264,7 +332,6 @@ int main() {
       if (scomds.size() > 1) {
         // 关闭最后一个管道的读端与写端
         close(fd[scomds.size()-2][1]);
-        close(fd[scomds.size()-2][1]);
       }
       while (wait(nullptr) > 0); // 等待所有子进程结束
       return 0;
@@ -274,6 +341,11 @@ int main() {
       // 成功：返回终止的子进程PID
       // 失败：返回 -1（如无子进程或信号中断）
       // 父进程：设置子进程组为前台并等待
+      if (bg_command) {
+        bg_pids.push_back(pid); // 将子进程的PID添加到后台进程列表;
+        continue; // 跳过，实现"允许启动更多进程而无需等待后台进程完成"功能
+      }
+
       setpgid(pid, pid);
       tcsetpgrp(STDIN_FILENO, pid);
 
