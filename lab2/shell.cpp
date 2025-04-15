@@ -132,6 +132,8 @@ int main() {
           if (chdir(oldpwd) == -1) {
             perror("chdir() failed");
             continue;
+          } else {
+            std::cout << oldpwd << std::endl;
           }
           continue;
         } else {
@@ -169,16 +171,17 @@ int main() {
       if (args.size() == 1) {
         std::cout << "\n";
         continue;
-      } else if (args[1] == "~root") {
+      } else if (args[1] == "$SHELL") {
         if (args.size() > 2) {
           std::cout << "Invalid echo code\n";
           continue;
-        }
-        struct passwd *pw = getpwnam("root");
+        } 
+        uid_t uid = getuid(); // 获取当前用户的UID
+        struct passwd *pw = getpwuid(uid);  // 通过 UID 查询用户信息
         if (pw) {
-          std::cout << pw->pw_dir << std::endl;
+          std::cout << pw->pw_shell << std::endl;
         } else {
-          perror("getpwnam() failed");
+          perror("getpwuid() failed");
         }
         continue;
       } else {
