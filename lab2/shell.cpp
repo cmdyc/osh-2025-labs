@@ -162,6 +162,7 @@ int main() {
           perror("waitpid failed");
         } else if (WIFEXITED(status) | WIFSIGNALED(status) | WEXITSTATUS(status)) {
           std::cout << "Process " << bg_pid << " exited " << "\n";
+          bg_pids.erase(bg_pids.begin());
         }
       }
       continue;
