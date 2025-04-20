@@ -38,7 +38,7 @@ int main() {
    std::string oldwd;
 
   // 用来储存父进程(Shell)的PID
-  pid_t ppid = getpid();
+  // pid_t ppid = getpid();
 
   // 用来表示命令是否在后台执行
   bool bg_command;
