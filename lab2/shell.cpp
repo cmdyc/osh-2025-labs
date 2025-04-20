@@ -34,6 +34,12 @@ int main() {
   // 用来储存后台进程的PID
   std::vector<pid_t> bg_pids;
 
+  // 用来储存上一次的工作目录
+   std::string oldwd;
+
+  // 用来储存父进程(Shell)的PID
+  pid_t ppid = getpid();
+
   // 用来表示命令是否在后台执行
   bool bg_command;
 
@@ -117,6 +123,11 @@ int main() {
     // 更改当前工作目录为指定目录
     if (args[0] == "cd") {
       if (args.size() == 1) {
+        oldwd = getcwd(NULL, 0); // 获取当前工作目录
+        if (oldwd == "") {
+          perror("getcwd() failed");
+          continue;
+        }
         if (chdir("/home") == -1) {
           perror("chdir() failed");
           continue;
@@ -124,20 +135,26 @@ int main() {
         continue;
       } else if (args.size() == 2) {
         if (args[1] == "-") {
-          const char *oldpwd = getenv("OLDPWD");
-          if (oldpwd == NULL) {
+          if (oldwd == "") {
             std::cout << "OLDPWD not set\n";
             continue;
           }
-          if (chdir(oldpwd) == -1) {
-            perror("chdir() failed");
+          std::string temp_oldwd = oldwd;
+          std::cout << oldwd << std::endl;
+          oldwd = getcwd(NULL, 0); // 获取当前工作目录
+          if (oldwd == "") {
+            perror("getcwd() failed");
             continue;
-          } else {
-            std::cout << oldpwd << std::endl;
           }
+          chdir(temp_oldwd.c_str());
           continue;
         } else {
           // chdir()函数的参数为*char，因此需要转换格式
+          oldwd = getcwd(NULL, 0); // 获取当前工作目录
+          if (oldwd == "") {
+            perror("getcwd() failed");
+            continue;
+          }
           if (chdir(args[1].c_str()) == -1) {
             perror("chdir() failed");
             continue;
@@ -162,7 +179,7 @@ int main() {
           perror("waitpid failed");
         } else if (WIFEXITED(status) | WIFSIGNALED(status) | WEXITSTATUS(status)) {
           std::cout << "Process " << bg_pid << " exited " << "\n";
-          bg_pids.erase(bg_pids.begin());
+          bg_pids.pop_back();//erase(bg_pids.begin()); // 将已经结束的进程从列表中删除
         }
       }
       continue;
@@ -223,8 +240,9 @@ int main() {
       // 并且避免后台进程与终端交互
       // 如果命令不是后台执行的，设置子进程为前台进程组
       if (!bg_command) {
-        tcsetpgrp(STDIN_FILENO, getpgid(0)); // 将父进程设置为当前终端的前台进程组
+        tcsetpgrp(STDIN_FILENO, getpgid(0)); // 将子进程组设置为当前终端的前台进程组
       } else {
+        // tcsetpgrp(STDIN_FILENO, ppid); 
         int null_fd = open("/dev/null", O_RDWR);
         dup2(null_fd, STDIN_FILENO);
         dup2(null_fd, STDOUT_FILENO);
