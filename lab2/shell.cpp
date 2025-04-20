@@ -35,10 +35,10 @@ int main() {
   std::vector<pid_t> bg_pids;
 
   // 用来储存上一次的工作目录
-   std::string oldwd;
+  std::string oldwd;
 
   // 用来储存父进程(Shell)的PID
-  // pid_t ppid = getpid();
+  pid_t ppid = getpid();
 
   // 用来表示命令是否在后台执行
   bool bg_command;
@@ -242,7 +242,7 @@ int main() {
       if (!bg_command) {
         tcsetpgrp(STDIN_FILENO, getpgid(0)); // 将子进程组设置为当前终端的前台进程组
       } else {
-        // tcsetpgrp(STDIN_FILENO, ppid); 
+        tcsetpgrp(STDIN_FILENO, ppid); 
         int null_fd = open("/dev/null", O_RDWR);
         dup2(null_fd, STDIN_FILENO);
         dup2(null_fd, STDOUT_FILENO);
