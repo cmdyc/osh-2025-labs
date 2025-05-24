@@ -47,6 +47,9 @@ ThreadPool thread_pool;
 int serv_sock;
 int clnt_sock;
 
+volatile sig_atomic_t shutdown_flag = 0;  // 全局关闭标志
+pthread_mutex_t shutdown_mutex = PTHREAD_MUTEX_INITIALIZER;  // 保护关闭标志
+
 //  函数原型
 int parse_request(char* request, ssize_t req_len, char* path, ssize_t* path_len);
 int parse_content(char *path, long *file_size, FILE **file);
@@ -55,7 +58,27 @@ void* thread_worker(void *arg);
 void thread_pool_init(ThreadPool *pool);
 void thread_pool_add_task(ThreadPool *pool, int clnt_sock);
 
+void sigint_handler(int sig) {
+    pthread_mutex_lock(&shutdown_mutex);
+    shutdown_flag = 1;  // 设置关闭标志
+    fprintf(stderr, "\nReceived SIGINT, shutting down server...\n");
+    pthread_mutex_unlock(&shutdown_mutex);
+    
+    // 关闭服务器套接字以中断 accept 阻塞
+    close(serv_sock);
+}
+
 int main(){
+    // 注册信号处理函数
+    struct sigaction sa;
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("sigaction failed");
+        exit(EXIT_FAILURE);
+    }
+
     // 创建套接字，参数说明：
     //   AF_INET: 使用 IPv4
     //   SOCK_STREAM: 面向连接的数据传输方式
@@ -96,15 +119,40 @@ int main(){
 
     while (1) // 一直循环
     {
+        pthread_mutex_lock(&shutdown_mutex);
+        if (shutdown_flag) {
+            pthread_mutex_unlock(&shutdown_mutex);
+            break;  // 退出循环
+        }
+        pthread_mutex_unlock(&shutdown_mutex);
+
         // 当没有客户端连接时，accept() 会阻塞程序执行，直到有客户端连接进来
         clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
         if(clnt_sock == -1) {
+            if (shutdown_flag) break;  // 因关闭标志触发 accept 错误
             perror("accept error!\n");
             continue;
         }
         // 处理客户端的请求
         thread_pool_add_task(&thread_pool, clnt_sock);
     }
+
+    // 关闭线程池
+    pthread_mutex_lock(&thread_pool.queue_mutex);
+    thread_pool.shutdown = 1;  // 设置线程池关闭标志
+    pthread_cond_broadcast(&thread_pool.queue_not_empty);  // 唤醒所有工作线程
+    pthread_cond_broadcast(&thread_pool.queue_not_full);
+    pthread_mutex_unlock(&thread_pool.queue_mutex);
+
+    // 等待所有工作线程退出
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_join(thread_pool.threads[i], NULL);
+    }
+
+    // 销毁同步资源
+    pthread_mutex_destroy(&thread_pool.queue_mutex);
+    pthread_cond_destroy(&thread_pool.queue_not_empty);
+    pthread_cond_destroy(&thread_pool.queue_not_full);
     
     // 实际上这里的代码不可到达，可以在 while 循环中收到 SIGINT 信号时主动 break
     // 关闭套接字
