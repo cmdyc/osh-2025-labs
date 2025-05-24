@@ -2,3 +2,5 @@
 *.o          # 所有目标文件
 *.out        # 通用可执行文件
 bubble_sort  # 你的可执行文件
+*.txt        # 文本文件
+lab3/index.html
